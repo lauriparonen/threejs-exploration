@@ -3,6 +3,110 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import * as dat from 'dat.gui'
 
+// Visualizer imports
+import createSphereVisualizer from './visualizers/pointSphere'
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 2000 );
+camera.position.set(1.0, 1.5, 1.0)
+
+const gui = new dat.GUI();
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize( window.innerWidth, window.innerHeight );
+document.body.appendChild( renderer.domElement );
+
+const controls = new OrbitControls(camera, renderer.domElement);
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}, false);
+
+// Audio
+let audioContext, audioSource, audioAnalyser, frequencyData;
+const audioElement = document.createElement('audio');
+audioElement.crossOrigin = 'anonymous';
+audioElement.controls = true;
+document.body.appendChild(audioElement);
+
+const inputElement = document.createElement('input');
+inputElement.type = 'file';
+inputElement.accept = 'audio/*';
+inputElement.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      audioElement.src = url;
+  
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioSource = audioContext.createMediaElementSource(audioElement);
+      audioAnalyser = audioContext.createAnalyser();
+      audioSource.connect(audioAnalyser);
+      audioSource.connect(audioContext.destination);
+  
+      frequencyData = new Uint8Array(audioAnalyser.frequencyBinCount);
+    }
+  });
+document.body.appendChild(inputElement);
+
+function switchVisualizer(scene, newVisualizer) {
+    scene.remove(scene.children.find(child => child instanceof THREE.Points));
+    scene.add(newVisualizer);
+}
+
+const uniforms = {
+    u_time: { value: 0.0 },
+    u_resolution: { value: new THREE.Vector2() },
+    u_audioData: { value: null },
+    color1: { value: new THREE.Color(0xff0000) },
+    color2: { value: new THREE.Color(0x0000ff) },
+};
+
+const sphereVisualizer = createSphereVisualizer(uniforms);
+scene.add(sphereVisualizer);
+
+gui.add({ visualizer: 'sphere' }, 'visualizer', ['sphere']).onChange((value) => {
+    switch (value) {
+      case 'sphere':
+        switchVisualizer(scene, sphereVisualizer);
+        break;
+    }
+  });
+
+// Animation
+function animate() {
+    requestAnimationFrame(animate);
+  
+    if (audioAnalyser) {
+      audioAnalyser.getByteFrequencyData(frequencyData);
+      const dataTexture = new THREE.DataTexture(
+        frequencyData,
+        frequencyData.length,
+        1,
+        THREE.RedFormat,
+        THREE.UnsignedByteType,
+        THREE.UnsignedByteType
+      );
+      dataTexture.needsUpdate = true;
+      uniforms.u_audioData.value = dataTexture;
+    }
+  
+    uniforms.u_time.value += 0.01;
+  
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  
+  animate();
+
+/*
+import './style.css'
+import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import * as dat from 'dat.gui'
+
 const pointsVS = `
     attribute float vertexIndex;
 
@@ -84,16 +188,23 @@ const uniforms = {
 };
 
 const gui = new dat.GUI();
-gui.addColor(uniforms.color1, 'value').name('Color 1');
-gui.addColor(uniforms.color2, 'value').name('Color 2');
+
+// Add color controllers for nuanced color changes
+gui.addColor(new function() {
+    this.color1 = '#' + uniforms.color1.value.getHexString();
+  }, 'color1').onChange(function(value) {
+    uniforms.color1.value.set(value);
+  });
+  gui.addColor(new function() {
+    this.color2 = '#' + uniforms.color2.value.getHexString();
+  }, 'color2').onChange(function(value) {
+    uniforms.color2.value.set(value);
+  });
 
 const material = new THREE.ShaderMaterial({
     uniforms: uniforms,
     vertexShader: pointsVS,
     fragmentShader: pointsFS,
-    //transparent: true,
-    //depthTest: false,
-    //blending: THREE.AdditiveBlending,
 });
 
 const points = new THREE.Points(geometry, material);
@@ -158,110 +269,4 @@ function animate() {
 }
 
 animate();
-
-/*
-// starter
-// Debug
-const gui = new dat.GUI()
-
-// Canvas
-const canvas = document.querySelector('canvas.webgl')
-
-// Scene
-const scene = new THREE.Scene()
-
-// Objects
-const geometry = new THREE.TorusGeometry( .7, .2, 16, 100 );
-//const geometry = new THREE.SphereGeometry(1, 32, 32)
-//const geometry = new THREE.BoxGeometry(1, 1, 1, 20, 20, 20)
-
-// Materials
-
-const pointsMaterial = new THREE.PointsMaterial()
-pointsMaterial.color = new THREE.Color(0xff0000)
-pointsMaterial.size = 0.002
-
-// Mesh
-const shape = new THREE.Points(geometry,pointsMaterial)
-scene.add(shape)
-
-// Lights
-
-const pointLight = new THREE.PointLight(0xffffff, 0.1)
-pointLight.position.x = 2
-pointLight.position.y = 3
-pointLight.position.z = 4
-scene.add(pointLight)
-
-/**
- * Sizes
-
-const sizes = {
-    width: window.innerWidth,
-    height: window.innerHeight
-}
-
-window.addEventListener('resize', () =>
-{
-    // Update sizes
-    sizes.width = window.innerWidth
-    sizes.height = window.innerHeight
-
-    // Update camera
-    camera.aspect = sizes.width / sizes.height
-    camera.updateProjectionMatrix()
-
-    // Update renderer
-    renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-})
-
-/**
- * Camera
-
-// Base camera
-const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100)
-camera.position.x = 0
-camera.position.y = 0
-camera.position.z = 2
-scene.add(camera)
-
-// Controls
-const controls = new OrbitControls(camera, canvas)
-controls.enableDamping = true
-
-/**
- * Renderer
-
-const renderer = new THREE.WebGLRenderer({
-    canvas: canvas
-})
-renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-
-/**
- * Animate
-
-
-const clock = new THREE.Clock()
-
-const tick = () =>
-{
-
-    const elapsedTime = clock.getElapsedTime()
-
-    // Update objects
-    shape.rotation.y = .05 * elapsedTime
-
-    // Update Orbital Controls
-    // controls.update()
-
-    // Render
-    renderer.render(scene, camera)
-
-    // Call tick again on the next frame
-    window.requestAnimationFrame(tick)
-}
-
-tick()
 */
